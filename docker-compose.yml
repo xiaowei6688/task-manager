@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Redis服务
+  redis:
+    image: redis:7-alpine
+    container_name: task_manage_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - task_manage_network
+
+  # API服务
+  api:
+    build: .
+    container_name: task_manage_api
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FLASK_ENV=production
+      - DEBUG=false
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - task_manage_network
+
+  # Celery Worker
+  worker:
+    build: .
+    container_name: task_manage_worker
+    command: celery -A celery_app worker --loglevel=info
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FLASK_ENV=production
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - task_manage_network
+
+  # Celery Beat (定时任务)
+  beat:
+    build: .
+    container_name: task_manage_beat
+    command: celery -A celery_app beat --loglevel=info
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FLASK_ENV=production
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - task_manage_network
+
+  # Flower (监控界面)
+  flower:
+    build: .
+    container_name: task_manage_flower
+    command: celery -A celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FLASK_ENV=production
+    depends_on:
+      - redis
+      - worker
+    restart: unless-stopped
+    networks:
+      - task_manage_network
+
+volumes:
+  redis_data:
+
+networks:
+  task_manage_network:
+    driver: bridge 
