@@ -165,6 +165,74 @@ def register_routes(app):
                 "error": f"服务器内部错误: {str(e)}"
             }), 500
     
+    @app.route('/api/scheduled-tasks', methods=['POST'])
+    def create_scheduled_task():
+        """创建定时任务"""
+        try:
+            request_data = request.get_json()
+            if not request_data:
+                return jsonify({
+                    "success": False,
+                    "error": "请求数据不能为空"
+                }), 400
+            
+            # 确保任务类型为scheduled
+            request_data['task_type'] = 'scheduled'
+            
+            # 验证cron表达式
+            if 'cron_expression' not in request_data:
+                return jsonify({
+                    "success": False,
+                    "error": "定时任务必须指定cron_expression"
+                }), 400
+            
+            # 创建定时任务
+            result = app.task_manager.create_task(request_data)
+            
+            # 如果创建成功，格式化下次执行时间
+            if result.get('success') and result.get('next_execution'):
+                from datetime import datetime
+                next_execution_time = datetime.fromtimestamp(result['next_execution'])
+                result['next_execution_formatted'] = next_execution_time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            return jsonify(result), 201 if result['success'] else 400
+                
+        except Exception as e:
+            api_logger.error("创建定时任务失败", error=e)
+            return jsonify({
+                "success": False,
+                "error": f"服务器内部错误: {str(e)}"
+            }), 500
+    
+    @app.route('/api/scheduled-tasks', methods=['GET'])
+    def get_scheduled_tasks():
+        """获取定时任务列表"""
+        try:
+            # 获取所有定时任务
+            periodic_tasks = app.task_manager.get_periodic_tasks()
+            
+            # 格式化下次执行时间
+            from datetime import datetime
+            for task in periodic_tasks:
+                if task.get('next_execution'):
+                    next_execution_time = datetime.fromtimestamp(task['next_execution'])
+                    task['next_execution_formatted'] = next_execution_time.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    task['next_execution_formatted'] = None
+            
+            return jsonify({
+                "success": True,
+                "scheduled_tasks": periodic_tasks,
+                "total": len(periodic_tasks)
+            }), 200
+            
+        except Exception as e:
+            api_logger.error("获取定时任务列表失败", error=e)
+            return jsonify({
+                "success": False,
+                "error": f"服务器内部错误: {str(e)}"
+            }), 500
+    
     @app.route('/api/tasks/stats', methods=['GET'])
     def get_task_stats():
         """获取任务统计信息"""

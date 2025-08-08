@@ -63,6 +63,19 @@ curl -X POST http://localhost:5000/api/tasks \
   }'
 ```
 
+### 定时任务
+```bash
+curl -X POST http://localhost:5001/api/scheduled-tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_name": "daily_report",
+    "task_type": "dynamic",
+    "cron_expression": "30 18 * * *",
+    "function_code": "def generate_report():\n    return {\"message\": \"日报生成完成\", \"timestamp\": datetime.now().isoformat()}",
+    "function_name": "generate_report"
+  }'
+```
+
 ### 获取任务列表
 ```bash
 curl http://localhost:5000/api/tasks

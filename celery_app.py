@@ -213,6 +213,93 @@ def cleanup_expired_tasks():
             "error": str(e)
         }
 
+# 动态调度器：扫描并派发定时任务
+@celery_app.task(name='system.dispatch_periodic_tasks')
+def dispatch_periodic_tasks():
+    """扫描 Redis 的 periodic_task:*，到点派发对应任务，并更新 next_execution"""
+    try:
+        import json
+        import time
+        from datetime import datetime
+        from croniter import croniter
+
+        dispatched = 0
+        now = datetime.now()
+
+        for key in redis_client.scan_iter(match="periodic_task:*"):
+            try:
+                periodic_data_raw = redis_client.get(key)
+                if not periodic_data_raw:
+                    continue
+                periodic = json.loads(periodic_data_raw)
+                task_id = periodic.get("task_id")
+                cron_expr = periodic.get("cron_expression")
+                celery_task_name = periodic.get("celery_task_name")
+                next_exec_ts = periodic.get("next_execution")
+
+                if not task_id or not cron_expr or not celery_task_name:
+                    continue
+
+                # 拉取原始任务数据
+                task_raw = redis_client.get(f"task:{task_id}")
+                if not task_raw:
+                    continue
+                task_record = json.loads(task_raw)
+                task_data = task_record.get("data", {})
+
+                # 计算当前应执行与否
+                if next_exec_ts is None:
+                    cron = croniter(cron_expr, now)
+                    next_dt = cron.get_next(datetime)
+                    periodic["next_execution"] = next_dt.timestamp()
+                    redis_client.set(key, json.dumps(periodic))
+                    continue
+
+                # 到点派发（容忍1分钟窗口）
+                if now.timestamp() + 1 >= float(next_exec_ts):
+                    # 构造kwargs
+                    if "function_code" in task_data:
+                        kwargs = {
+                            'code': task_data['function_code'],
+                            'function_name': task_data['function_name'],
+                            'args': task_data.get('args', []),
+                            'kwargs': task_data.get('kwargs', {}),
+                            'task_id': task_record['id'],
+                            'task_name': task_record['name']
+                        }
+                    elif "api_url" in task_data:
+                        kwargs = {
+                            'url': task_data['api_url'],
+                            'method': task_data.get('method', 'GET'),
+                            'headers': task_data.get('headers', {}),
+                            'data': task_data.get('data', {}),
+                            'timeout': task_data.get('timeout', 30),
+                            'task_id': task_record['id'],
+                            'task_name': task_record['name']
+                        }
+                    else:
+                        continue
+
+                    celery_app.send_task(celery_task_name, kwargs=kwargs)
+                    dispatched += 1
+
+                    # 回滚下一次时间
+                    cron = croniter(cron_expr, now)
+                    next_dt = cron.get_next(datetime)
+                    periodic["last_run_at"] = now.timestamp()
+                    periodic["next_execution"] = next_dt.timestamp()
+                    redis_client.set(key, json.dumps(periodic))
+
+            except Exception as inner_e:
+                system_logger.error("调度单个定时任务失败", error=inner_e)
+                continue
+
+        return {"success": True, "dispatched": dispatched, "timestamp": now.isoformat()}
+
+    except Exception as e:
+        system_logger.error("调度定时任务失败", error=e)
+        return {"success": False, "error": str(e)}
+
 # 创建任务管理器实例
 from tasks.task_manager import TaskManager
 task_manager = TaskManager(celery_app, redis_client)

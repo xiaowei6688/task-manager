@@ -95,6 +95,11 @@ class Config:
             "task": "system.cleanup_expired_tasks",
             "schedule": timedelta(hours=1),
         },
+        # 动态定时任务调度器（每分钟扫描并派发）
+        "dispatch-periodic-tasks": {
+            "task": "system.dispatch_periodic_tasks",
+            "schedule": timedelta(minutes=1),
+        },
     }
     
     # 日志配置
@@ -143,15 +148,6 @@ class DevelopmentConfig(Config):
     REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB = int(os.getenv("REDIS_DB", 1))
-    # REDIS_USERNAME = os.getenv("REDIS_USERNAME", "admin")
-    # REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "Admin123..")
-    
-    # 重写Redis URL
-    # REDIS_URL = f"redis://{REDIS_USERNAME}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-    
-    # 重写Celery配置
-    # CELERY_BROKER_URL = REDIS_URL
-    # CELERY_RESULT_BACKEND = REDIS_URL
 
 
 class ProductionConfig(Config):
