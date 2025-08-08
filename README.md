@@ -7,6 +7,8 @@
 - **任务类型支持**：
   - **动态代码任务**：执行用户提供的Python代码
   - **API接口任务**：执行HTTP请求
+  - **隔离代码任务**：在Docker容器中执行代码，支持第三方包依赖
+  - **隔离API任务**：在Docker容器中执行API请求
 - **执行方式支持**：
   - 立即执行任务
   - 延时执行任务
@@ -15,6 +17,7 @@
   - 手动定义任务
   - 动态添加任务（传递代码与函数名）
   - API接口任务
+  - 隔离环境任务（支持自定义依赖包）
   - 任务添加、删除、停止
 - **生产环境特性**：
   - 任务状态监控
@@ -22,6 +25,7 @@
   - 日志记录
   - 性能监控
   - 安全认证
+  - Docker容器隔离执行
 
 ## 任务类型详解
 
@@ -59,6 +63,46 @@
   "api_url": "https://api.example.com/data",
   "method": "GET",
   "timeout": 30
+}
+```
+
+### 3. 隔离代码任务 (Isolated Code Tasks)
+在Docker容器中执行Python代码，支持任意第三方包依赖。
+
+**支持的执行方式：**
+- **立即执行**：任务创建后立即执行
+- **延时执行**：指定时间后执行
+- **定时执行**：按Cron表达式定时执行
+
+**示例：**
+```json
+{
+  "name": "数据分析任务",
+  "task_type": "immediate",
+  "function_code": "import pandas as pd\ndef analyze():\n    df = pd.DataFrame({'A': [1,2,3]})\n    return df.describe().to_dict()",
+  "function_name": "analyze",
+  "requirements": ["pandas==1.5.0", "numpy==1.24.0"]
+}
+```
+
+### 4. 隔离API任务 (Isolated API Tasks)
+在Docker容器中执行API请求，支持自定义依赖包。
+
+**支持的执行方式：**
+- **立即执行**：任务创建后立即执行
+- **延时执行**：指定时间后执行
+- **定时执行**：按Cron表达式定时执行
+
+**示例：**
+```json
+{
+  "name": "隔离API请求",
+  "task_type": "immediate",
+  "api_url": "https://api.example.com/data",
+  "method": "POST",
+  "data": {"key": "value"},
+  "timeout": 30,
+  "requirements": ["requests==2.28.0"]
 }
 ```
 
@@ -117,6 +161,7 @@ python start.py
 
 ### 任务管理接口
 - `POST /api/tasks` - 创建任务
+- `POST /api/tasks/isolated` - 创建隔离任务
 - `GET /api/tasks` - 获取任务列表
 - `GET /api/tasks/{task_id}` - 获取任务详情
 - `DELETE /api/tasks/{task_id}` - 删除任务
@@ -197,6 +242,43 @@ python start.py
   "api_url": "https://httpbin.org/status/200",
   "method": "GET",
   "timeout": 30
+}
+```
+
+#### 隔离任务示例
+
+**立即执行：**
+```json
+{
+  "name": "立即隔离计算",
+  "task_type": "immediate",
+  "function_code": "import pandas as pd\ndef calculate():\n    return 1 + 2 * 3",
+  "function_name": "calculate",
+  "requirements": ["pandas==1.5.0"]
+}
+```
+
+**延时执行：**
+```json
+{
+  "name": "延时隔离计算",
+  "task_type": "delayed",
+  "delay_seconds": 60,
+  "function_code": "import numpy as np\ndef calculate():\n    return np.random.rand(5).tolist()",
+  "function_name": "calculate",
+  "requirements": ["numpy==1.24.0"]
+}
+```
+
+**定时执行：**
+```json
+{
+  "name": "定时隔离任务",
+  "task_type": "scheduled",
+  "cron_expression": "0 0 * * *",
+  "function_code": "import requests\ndef daily_report():\n    response = requests.get('https://api.example.com/data')\n    return response.json()",
+  "function_name": "daily_report",
+  "requirements": ["requests==2.28.0"]
 }
 ```
 

@@ -195,9 +195,11 @@ class TaskManager:
         
         # 验证代码任务
         if 'function_code' in task_data:
-            safety_check = code_checker.check_code_safety(task_data['function_code'])
-            if not safety_check['safe']:
-                return False
+            # 隔离任务不需要安全检查，因为它们在容器中执行
+            if not task_data.get('isolated', False):
+                safety_check = code_checker.check_code_safety(task_data['function_code'])
+                if not safety_check['safe']:
+                    return False
         
         return True
     
@@ -236,10 +238,23 @@ class TaskManager:
         """执行动态代码任务"""
         task_data = task_record['data']
         
-        # 使用已注册的任务名称
-        result = self.celery_app.send_task(
-            'dynamic.execute_code',
-            kwargs={
+        # 检查是否为隔离任务
+        if task_data.get('isolated', False):
+            # 使用隔离任务
+            task_name = 'isolated.execute_code'
+            kwargs = {
+                'code': task_data['function_code'],
+                'function_name': task_data['function_name'],
+                'args': task_data.get('args', []),
+                'kwargs': task_data.get('kwargs', {}),
+                'requirements': task_data.get('requirements', []),
+                'task_id': task_record['id'],
+                'task_name': task_record['name']
+            }
+        else:
+            # 使用普通任务
+            task_name = 'dynamic.execute_code'
+            kwargs = {
                 'code': task_data['function_code'],
                 'function_name': task_data['function_name'],
                 'args': task_data.get('args', []),
@@ -247,7 +262,9 @@ class TaskManager:
                 'task_id': task_record['id'],
                 'task_name': task_record['name']
             }
-        )
+        
+        # 使用已注册的任务名称
+        result = self.celery_app.send_task(task_name, kwargs=kwargs)
         
         # 不要阻塞等待结果，直接返回任务ID
         return {
@@ -260,10 +277,24 @@ class TaskManager:
         """执行API任务"""
         task_data = task_record['data']
         
-        # 使用已注册的任务名称
-        result = self.celery_app.send_task(
-            'api.execute_request',
-            kwargs={
+        # 检查是否为隔离任务
+        if task_data.get('isolated', False):
+            # 使用隔离API任务
+            task_name = 'isolated.execute_api'
+            kwargs = {
+                'url': task_data['api_url'],
+                'method': task_data.get('method', 'GET'),
+                'headers': task_data.get('headers', {}),
+                'data': task_data.get('data', {}),
+                'timeout': task_data.get('timeout', 30),
+                'requirements': task_data.get('requirements', ['requests']),
+                'task_id': task_record['id'],
+                'task_name': task_record['name']
+            }
+        else:
+            # 使用普通API任务
+            task_name = 'api.execute_request'
+            kwargs = {
                 'url': task_data['api_url'],
                 'method': task_data.get('method', 'GET'),
                 'headers': task_data.get('headers', {}),
@@ -272,7 +303,9 @@ class TaskManager:
                 'task_id': task_record['id'],
                 'task_name': task_record['name']
             }
-        )
+        
+        # 使用已注册的任务名称
+        result = self.celery_app.send_task(task_name, kwargs=kwargs)
         
         # 不要阻塞等待结果，直接返回任务ID
         return {
@@ -286,26 +319,53 @@ class TaskManager:
         task_data = task_record['data']
         
         if 'function_code' in task_data:
-            task_name = 'dynamic.execute_code'
-            kwargs = {
-                'code': task_data['function_code'],
-                'function_name': task_data['function_name'],
-                'args': task_data.get('args', []),
-                'kwargs': task_data.get('kwargs', {}),
-                'task_id': task_record['id'],
-                'task_name': task_record['name']
-            }
+            # 检查是否为隔离任务
+            if task_data.get('isolated', False):
+                task_name = 'isolated.execute_code'
+                kwargs = {
+                    'code': task_data['function_code'],
+                    'function_name': task_data['function_name'],
+                    'args': task_data.get('args', []),
+                    'kwargs': task_data.get('kwargs', {}),
+                    'requirements': task_data.get('requirements', []),
+                    'task_id': task_record['id'],
+                    'task_name': task_record['name']
+                }
+            else:
+                task_name = 'dynamic.execute_code'
+                kwargs = {
+                    'code': task_data['function_code'],
+                    'function_name': task_data['function_name'],
+                    'args': task_data.get('args', []),
+                    'kwargs': task_data.get('kwargs', {}),
+                    'task_id': task_record['id'],
+                    'task_name': task_record['name']
+                }
         elif 'api_url' in task_data:
-            task_name = 'api.execute_request'
-            kwargs = {
-                'url': task_data['api_url'],
-                'method': task_data.get('method', 'GET'),
-                'headers': task_data.get('headers', {}),
-                'data': task_data.get('data', {}),
-                'timeout': task_data.get('timeout', 30),
-                'task_id': task_record['id'],
-                'task_name': task_record['name']
-            }
+            # 检查是否为隔离任务
+            if task_data.get('isolated', False):
+                task_name = 'isolated.execute_api'
+                kwargs = {
+                    'url': task_data['api_url'],
+                    'method': task_data.get('method', 'GET'),
+                    'headers': task_data.get('headers', {}),
+                    'data': task_data.get('data', {}),
+                    'timeout': task_data.get('timeout', 30),
+                    'requirements': task_data.get('requirements', ['requests']),
+                    'task_id': task_record['id'],
+                    'task_name': task_record['name']
+                }
+            else:
+                task_name = 'api.execute_request'
+                kwargs = {
+                    'url': task_data['api_url'],
+                    'method': task_data.get('method', 'GET'),
+                    'headers': task_data.get('headers', {}),
+                    'data': task_data.get('data', {}),
+                    'timeout': task_data.get('timeout', 30),
+                    'task_id': task_record['id'],
+                    'task_name': task_record['name']
+                }
         else:
             raise ValueError("未知的任务类型")
         
@@ -322,26 +382,53 @@ class TaskManager:
         
         # 确定任务类型和参数
         if 'function_code' in task_data:
-            task_name = 'dynamic.execute_code'
-            kwargs = {
-                'code': task_data['function_code'],
-                'function_name': task_data['function_name'],
-                'args': task_data.get('args', []),
-                'kwargs': task_data.get('kwargs', {}),
-                'task_id': task_id,
-                'task_name': task_record['name']
-            }
+            # 检查是否为隔离任务
+            if task_data.get('isolated', False):
+                task_name = 'isolated.execute_code'
+                kwargs = {
+                    'code': task_data['function_code'],
+                    'function_name': task_data['function_name'],
+                    'args': task_data.get('args', []),
+                    'kwargs': task_data.get('kwargs', {}),
+                    'requirements': task_data.get('requirements', []),
+                    'task_id': task_id,
+                    'task_name': task_record['name']
+                }
+            else:
+                task_name = 'dynamic.execute_code'
+                kwargs = {
+                    'code': task_data['function_code'],
+                    'function_name': task_data['function_name'],
+                    'args': task_data.get('args', []),
+                    'kwargs': task_data.get('kwargs', {}),
+                    'task_id': task_id,
+                    'task_name': task_record['name']
+                }
         elif 'api_url' in task_data:
-            task_name = 'api.execute_request'
-            kwargs = {
-                'url': task_data['api_url'],
-                'method': task_data.get('method', 'GET'),
-                'headers': task_data.get('headers', {}),
-                'data': task_data.get('data', {}),
-                'timeout': task_data.get('timeout', 30),
-                'task_id': task_id,
-                'task_name': task_record['name']
-            }
+            # 检查是否为隔离任务
+            if task_data.get('isolated', False):
+                task_name = 'isolated.execute_api'
+                kwargs = {
+                    'url': task_data['api_url'],
+                    'method': task_data.get('method', 'GET'),
+                    'headers': task_data.get('headers', {}),
+                    'data': task_data.get('data', {}),
+                    'timeout': task_data.get('timeout', 30),
+                    'requirements': task_data.get('requirements', ['requests']),
+                    'task_id': task_id,
+                    'task_name': task_record['name']
+                }
+            else:
+                task_name = 'api.execute_request'
+                kwargs = {
+                    'url': task_data['api_url'],
+                    'method': task_data.get('method', 'GET'),
+                    'headers': task_data.get('headers', {}),
+                    'data': task_data.get('data', {}),
+                    'timeout': task_data.get('timeout', 30),
+                    'task_id': task_id,
+                    'task_name': task_record['name']
+                }
         else:
             raise ValueError("未知的任务类型")
         

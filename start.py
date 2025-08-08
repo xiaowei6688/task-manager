@@ -57,11 +57,20 @@ class TaskManageSystem:
     def start_api_server(self):
         """启动API服务器"""
         from celery_app import api_app
-        api_app.run(
-            host=config.API_HOST,
-            port=config.API_PORT,
-            debug=config.API_DEBUG
-        )
+        
+        def run_api_server():
+            api_app.run(
+                host=config.API_HOST,
+                port=config.API_PORT,
+                debug=config.API_DEBUG,
+                use_reloader=False  # 禁用自动重载，避免重复启动
+            )
+        
+        # 在后台线程中启动API服务器
+        api_thread = Thread(target=run_api_server)
+        api_thread.daemon = True
+        api_thread.start()
+        system_logger.info("API服务器已启动")
     
     def start_all_services(self):
         """启动所有服务"""

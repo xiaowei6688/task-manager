@@ -24,7 +24,7 @@ celery_app = Celery(
     'task_manage',
     broker=config.CELERY_BROKER_URL,
     backend=config.CELERY_RESULT_BACKEND,
-    include=['tasks.base_tasks', 'celery_app']
+    include=['tasks.base_tasks', 'tasks.isolated_tasks', 'celery_app']
 )
 
 # Celery配置
@@ -51,101 +51,40 @@ celery_app.conf.update(
 
 # 注册任务
 from tasks.base_tasks import DynamicCodeTask, APITask, SystemTask
-from datetime import datetime
+from tasks.isolated_tasks import IsolatedCodeTask, IsolatedAPITask
 
 # 注册动态代码任务
 @celery_app.task(name='dynamic.execute_code', bind=True)
 def dynamic_task(self, code: str, function_name: str, args: list = None, kwargs: dict = None, task_id: str = None, task_name: str = None):
     """动态代码执行任务"""
-    # 获取任务ID和名称
-    task_id = task_id or self.request.id
-    task_name = task_name or "dynamic.execute_code"
-    
-    # 创建任务实例并执行
     task_instance = DynamicCodeTask()
-    task_instance.task_id = task_id
-    task_instance.task_name = task_name
-    task_instance.start_time = datetime.now()
-    
-    # 更新任务状态为运行中
-    task_instance._update_task_status('running')
-    
-    try:
-        result = task_instance.run(code, function_name, args, kwargs, task_id, task_name)
-        # 更新任务状态为完成
-        task_instance._update_task_status('completed', result)
-        return result
-    except Exception as e:
-        error_result = {
-            'success': False,
-            'error': str(e),
-            'execution_time': (datetime.now() - task_instance.start_time).total_seconds()
-        }
-        # 更新任务状态为失败
-        task_instance._update_task_status('failed', error_result)
-        raise
+    return task_instance.run(code=code, function_name=function_name, args=args, kwargs=kwargs, task_id=task_id, task_name=task_name)
 
 @celery_app.task(name='api.execute_request', bind=True)
 def api_task(self, url: str, method: str = 'GET', headers: dict = None, data: dict = None, timeout: int = 30, task_id: str = None, task_name: str = None):
     """API请求任务"""
-    # 获取任务ID和名称
-    task_id = task_id or self.request.id
-    task_name = task_name or "api.execute_request"
-    
-    # 创建任务实例并执行
     task_instance = APITask()
-    task_instance.task_id = task_id
-    task_instance.task_name = task_name
-    task_instance.start_time = datetime.now()
-    
-    # 更新任务状态为运行中
-    task_instance._update_task_status('running')
-    
-    try:
-        result = task_instance.run(url, method, headers, data, 30, task_id, task_name)
-        # 更新任务状态为完成
-        task_instance._update_task_status('completed', result)
-        return result
-    except Exception as e:
-        error_result = {
-            'success': False,
-            'error': str(e),
-            'execution_time': (datetime.now() - task_instance.start_time).total_seconds()
-        }
-        # 更新任务状态为失败
-        task_instance._update_task_status('failed', error_result)
-        raise
+    return task_instance.run(url=url, method=method, headers=headers, data=data, timeout=timeout, task_id=task_id, task_name=task_name)
+
+# 注册隔离代码执行任务
+@celery_app.task(name='isolated.execute_code', bind=True)
+def isolated_code_task(self, code: str, function_name: str, requirements: list = None, args: list = None, kwargs: dict = None, task_id: str = None, task_name: str = None):
+    """隔离环境代码执行任务"""
+    task_instance = IsolatedCodeTask()
+    return task_instance.run(code=code, function_name=function_name, requirements=requirements, args=args, kwargs=kwargs, task_id=task_id, task_name=task_name)
+
+# 注册隔离API请求任务
+@celery_app.task(name='isolated.execute_api', bind=True)
+def isolated_api_task(self, url: str, method: str = 'GET', headers: dict = None, data: dict = None, timeout: int = 30, requirements: list = None, task_id: str = None, task_name: str = None):
+    """隔离环境API请求任务"""
+    task_instance = IsolatedAPITask()
+    return task_instance.run(url=url, method=method, headers=headers, data=data, timeout=timeout, requirements=requirements, task_id=task_id, task_name=task_name)
 
 @celery_app.task(name='system.execute', bind=True)
 def system_task(self, operation: str, params: dict = None, task_id: str = None, task_name: str = None):
     """系统任务"""
-    # 获取任务ID和名称
-    task_id = task_id or self.request.id
-    task_name = task_name or "system.execute"
-    
-    # 创建任务实例并执行
     task_instance = SystemTask()
-    task_instance.task_id = task_id
-    task_instance.task_name = task_name
-    task_instance.start_time = datetime.now()
-    
-    # 更新任务状态为运行中
-    task_instance._update_task_status('running')
-    
-    try:
-        result = task_instance.run(operation, params, task_id, task_name)
-        # 更新任务状态为完成
-        task_instance._update_task_status('completed', result)
-        return result
-    except Exception as e:
-        error_result = {
-            'success': False,
-            'error': str(e),
-            'execution_time': (datetime.now() - task_instance.start_time).total_seconds()
-        }
-        # 更新任务状态为失败
-        task_instance._update_task_status('failed', error_result)
-        raise
+    return task_instance.run(operation=operation, params=params, task_id=task_id, task_name=task_name)
 
 # 系统健康检查任务
 @celery_app.task(name='system.health_check')
@@ -259,24 +198,49 @@ def dispatch_periodic_tasks():
                 if now.timestamp() + 1 >= float(next_exec_ts):
                     # 构造kwargs
                     if "function_code" in task_data:
-                        kwargs = {
-                            'code': task_data['function_code'],
-                            'function_name': task_data['function_name'],
-                            'args': task_data.get('args', []),
-                            'kwargs': task_data.get('kwargs', {}),
-                            'task_id': task_record['id'],
-                            'task_name': task_record['name']
-                        }
+                        # 检查是否为隔离任务
+                        if task_data.get('isolated', False):
+                            kwargs = {
+                                'code': task_data['function_code'],
+                                'function_name': task_data['function_name'],
+                                'args': task_data.get('args', []),
+                                'kwargs': task_data.get('kwargs', {}),
+                                'requirements': task_data.get('requirements', []),
+                                'task_id': task_record['id'],
+                                'task_name': task_record['name']
+                            }
+                        else:
+                            kwargs = {
+                                'code': task_data['function_code'],
+                                'function_name': task_data['function_name'],
+                                'args': task_data.get('args', []),
+                                'kwargs': task_data.get('kwargs', {}),
+                                'task_id': task_record['id'],
+                                'task_name': task_record['name']
+                            }
                     elif "api_url" in task_data:
-                        kwargs = {
-                            'url': task_data['api_url'],
-                            'method': task_data.get('method', 'GET'),
-                            'headers': task_data.get('headers', {}),
-                            'data': task_data.get('data', {}),
-                            'timeout': task_data.get('timeout', 30),
-                            'task_id': task_record['id'],
-                            'task_name': task_record['name']
-                        }
+                        # 检查是否为隔离任务
+                        if task_data.get('isolated', False):
+                            kwargs = {
+                                'url': task_data['api_url'],
+                                'method': task_data.get('method', 'GET'),
+                                'headers': task_data.get('headers', {}),
+                                'data': task_data.get('data', {}),
+                                'timeout': task_data.get('timeout', 30),
+                                'requirements': task_data.get('requirements', ['requests']),
+                                'task_id': task_record['id'],
+                                'task_name': task_record['name']
+                            }
+                        else:
+                            kwargs = {
+                                'url': task_data['api_url'],
+                                'method': task_data.get('method', 'GET'),
+                                'headers': task_data.get('headers', {}),
+                                'data': task_data.get('data', {}),
+                                'timeout': task_data.get('timeout', 30),
+                                'task_id': task_record['id'],
+                                'task_name': task_record['name']
+                            }
                     else:
                         continue
 

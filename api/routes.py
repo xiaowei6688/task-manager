@@ -85,6 +85,49 @@ def register_routes(app):
                 "error": f"服务器内部错误: {str(e)}"
             }), 500
     
+    @app.route('/api/tasks/isolated', methods=['POST'])
+    def create_isolated_task():
+        """创建隔离任务"""
+        try:
+            request_data = request.get_json()
+            if not request_data:
+                return jsonify({
+                    "success": False,
+                    "error": "请求数据不能为空"
+                }), 400
+            
+            # 设置隔离标志
+            request_data['isolated'] = True
+            
+            # 验证必需字段
+            if 'function_code' in request_data:
+                if 'function_name' not in request_data:
+                    return jsonify({
+                        "success": False,
+                        "error": "代码任务必须指定function_name"
+                    }), 400
+            elif 'api_url' in request_data:
+                # API任务，requirements默认为requests
+                if 'requirements' not in request_data:
+                    request_data['requirements'] = ['requests']
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "隔离任务必须包含function_code或api_url"
+                }), 400
+            
+            # 创建隔离任务
+            result = app.task_manager.create_task(request_data)
+            
+            return jsonify(result), 201 if result['success'] else 400
+                
+        except Exception as e:
+            api_logger.error("创建隔离任务失败", error=e)
+            return jsonify({
+                "success": False,
+                "error": f"服务器内部错误: {str(e)}"
+            }), 500
+    
     @app.route('/api/tasks', methods=['GET'])
     def get_tasks():
         """获取任务列表"""
